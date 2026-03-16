@@ -57,6 +57,7 @@ export type SwishCallback = {
   datePaid?: string
   errorCode?: string
   errorMessage?: string
+  originalPaymentReference?: string
 }
 
 export type SwishRefundRequest = {

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
-import { MedusaError, PaymentSessionStatus } from "@medusajs/framework/utils"
+import { describe, it, expect, vi } from "vitest"
+import { PaymentSessionStatus } from "@medusajs/framework/utils"
 import SwishProviderService from "../service"
 import type { SwishCallback } from "../types"
 
@@ -97,7 +97,7 @@ describe("SwishProviderService", () => {
         swish_id: "req-123",
         token: "tok-abc",
         session_id: "sess-001",
-        swish_amount: "200",
+        swish_amount: "199.50",
         currency_code: "SEK",
       })
 
@@ -105,13 +105,13 @@ describe("SwishProviderService", () => {
         expect.objectContaining({
           payeePaymentReference: "sess-001",
           payeeAlias: "1234567890",
-          amount: "200",
+          amount: "199.50",
           currency: "SEK",
         })
       )
     })
 
-    it("rounds amount to integer string", async () => {
+    it("preserves öre in decimal amounts", async () => {
       const { service } = createService()
       const client = (service as any).client_
       client.createPaymentRequest.mockResolvedValue({ id: "x", token: "y" })
@@ -123,7 +123,23 @@ describe("SwishProviderService", () => {
       })
 
       expect(client.createPaymentRequest).toHaveBeenCalledWith(
-        expect.objectContaining({ amount: "100" })
+        expect.objectContaining({ amount: "99.99" })
+      )
+    })
+
+    it("formats whole amounts with two decimals", async () => {
+      const { service } = createService()
+      const client = (service as any).client_
+      client.createPaymentRequest.mockResolvedValue({ id: "x", token: "y" })
+
+      await service.initiatePayment({
+        amount: 100,
+        currency_code: "SEK",
+        context: {} as any,
+      })
+
+      expect(client.createPaymentRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: "100.00" })
       )
     })
   })
@@ -202,47 +218,78 @@ describe("SwishProviderService", () => {
       )
       expect(result.action).toBe("not_supported")
     })
+
+    it("returns not_supported for refund callbacks", async () => {
+      const { service } = createService()
+      const refundCallback: SwishCallback = {
+        ...baseCallback,
+        status: "PAID",
+        originalPaymentReference: "ref-abc",
+      }
+      const result = await service.getWebhookActionAndData(
+        makePayload(refundCallback)
+      )
+      expect(result.action).toBe("not_supported")
+    })
   })
 
   describe("capturePayment", () => {
     it("is a no-op that returns existing data", async () => {
       const { service } = createService()
-      const data = { swish_id: "req-123", resource_id: "ref-abc" }
+      const data = { swish_id: "req-123" }
       const result = await service.capturePayment({ data })
       expect(result.data).toMatchObject(data)
     })
   })
 
   describe("refundPayment", () => {
-    it("calls the refund API with correct amount", async () => {
+    it("fetches paymentReference from Swish API and calls refund", async () => {
       const { service } = createService()
       const client = (service as any).client_
+      client.getPaymentRequest.mockResolvedValue({
+        paymentReference: "ref-abc",
+        status: "PAID",
+      })
       client.createRefund.mockResolvedValue({ id: "refund-1" })
 
       const result = await service.refundPayment({
-        data: { resource_id: "ref-abc" },
-        amount: 50,
+        data: { swish_id: "req-123" },
+        amount: 50.50,
       })
 
+      expect(client.getPaymentRequest).toHaveBeenCalledWith("req-123")
       expect(client.createRefund).toHaveBeenCalledWith(
         expect.objectContaining({
           originalPaymentReference: "ref-abc",
-          amount: "50",
+          amount: "50.50",
           currency: "SEK",
         })
       )
       expect(result.data).toMatchObject({
-        resource_id: "ref-abc",
+        swish_id: "req-123",
         refund_id: "refund-1",
-        refund_amount: "50",
+        refund_amount: "50.50",
       })
     })
 
-    it("throws when payment reference is missing", async () => {
+    it("throws when swish_id is missing", async () => {
       const { service } = createService()
       await expect(
         service.refundPayment({ data: {}, amount: 50 })
-      ).rejects.toThrow("Missing payment reference")
+      ).rejects.toThrow("Missing swish_id")
+    })
+
+    it("throws when payment has no paymentReference yet", async () => {
+      const { service } = createService()
+      const client = (service as any).client_
+      client.getPaymentRequest.mockResolvedValue({
+        paymentReference: undefined,
+        status: "CREATED",
+      })
+
+      await expect(
+        service.refundPayment({ data: { swish_id: "req-123" }, amount: 50 })
+      ).rejects.toThrow("no paymentReference")
     })
   })
 
@@ -361,6 +408,26 @@ describe("SwishProviderService", () => {
 
       expect(client.cancelPaymentRequest).toHaveBeenCalledWith("req-old")
       expect(result.data).toMatchObject({ swish_id: "req-new" })
+    })
+
+    it("preserves decimal amounts", async () => {
+      const { service } = createService()
+      const client = (service as any).client_
+      client.createPaymentRequest.mockResolvedValue({
+        id: "req-new",
+        token: "tok-new",
+      })
+
+      await service.updatePayment({
+        data: {},
+        amount: 149.90,
+        currency_code: "SEK",
+        context: {} as any,
+      })
+
+      expect(client.createPaymentRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: "149.90" })
+      )
     })
   })
 

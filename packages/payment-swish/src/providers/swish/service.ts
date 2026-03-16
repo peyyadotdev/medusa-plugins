@@ -81,31 +81,8 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
   async initiatePayment(
     input: InitiatePaymentInput
   ): Promise<InitiatePaymentOutput> {
-    const { amount, currency_code, context } = input
-    const sessionId = (context as Record<string, unknown>)?.session_id as string ?? ""
-
-    const swishAmount = String(Math.round(Number(amount)))
-
-    const { id, token } = await this.client_.createPaymentRequest({
-      payeePaymentReference: sessionId,
-      callbackUrl: this.options_.callbackUrl,
-      payerAlias: (input.data?.payer_alias as string) ?? undefined,
-      payeeAlias: this.options_.payeeAlias,
-      amount: swishAmount,
-      currency: "SEK",
-      message: ((input.data?.message as string) ?? "").slice(0, 50) || undefined,
-    })
-
-    return {
-      id,
-      data: {
-        swish_id: id,
-        token,
-        session_id: sessionId,
-        swish_amount: swishAmount,
-        currency_code,
-      },
-    }
+    const { amount, currency_code, context, data } = input
+    return this.createSwishRequest(amount, currency_code, context, data)
   }
 
   async authorizePayment(
@@ -125,6 +102,16 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
         ? payload.rawData
         : payload.rawData.toString()
     ) as SwishCallback
+
+    if (callback.originalPaymentReference) {
+      return {
+        action: "not_supported" as PaymentActions,
+        data: {
+          session_id: callback.payeePaymentReference ?? "",
+          amount: new BigNumber(callback.amount),
+        },
+      }
+    }
 
     const sessionId = callback.payeePaymentReference
     const amount = callback.amount
@@ -157,18 +144,26 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
   async refundPayment(
     input: RefundPaymentInput
   ): Promise<RefundPaymentOutput> {
-    const paymentReference = input.data?.resource_id as string
-    if (!paymentReference) {
+    const swishId = input.data?.swish_id as string
+    if (!swishId) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        "Missing payment reference for refund. Was the payment completed?"
+        "Missing swish_id for refund. Was the payment initiated?"
       )
     }
 
-    const swishAmount = String(Math.round(Number(input.amount)))
+    const payment = await this.client_.getPaymentRequest(swishId)
+    if (!payment.paymentReference) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "Payment has no paymentReference yet. Was the payment completed?"
+      )
+    }
+
+    const swishAmount = Number(input.amount).toFixed(2)
 
     const { id: refundId } = await this.client_.createRefund({
-      originalPaymentReference: paymentReference,
+      originalPaymentReference: payment.paymentReference,
       callbackUrl: this.options_.callbackUrl,
       payerAlias: this.options_.payeeAlias,
       amount: swishAmount,
@@ -265,10 +260,40 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
       }
     }
 
-    const result = await this.initiatePayment(
-      input as unknown as InitiatePaymentInput
-    )
+    const { amount, currency_code, context, data } = input
+    const result = await this.createSwishRequest(amount, currency_code, context, data)
     return { data: result.data }
+  }
+
+  private async createSwishRequest(
+    amount: unknown,
+    currencyCode: string,
+    context?: Record<string, unknown>,
+    data?: Record<string, unknown>
+  ): Promise<InitiatePaymentOutput> {
+    const sessionId = (context as Record<string, unknown>)?.session_id as string ?? ""
+    const swishAmount = Number(amount).toFixed(2)
+
+    const { id, token } = await this.client_.createPaymentRequest({
+      payeePaymentReference: sessionId,
+      callbackUrl: this.options_.callbackUrl,
+      payerAlias: (data?.payer_alias as string) ?? undefined,
+      payeeAlias: this.options_.payeeAlias,
+      amount: swishAmount,
+      currency: "SEK",
+      message: ((data?.message as string) ?? "").slice(0, 50) || undefined,
+    })
+
+    return {
+      id,
+      data: {
+        swish_id: id,
+        token,
+        session_id: sessionId,
+        swish_amount: swishAmount,
+        currency_code: currencyCode,
+      },
+    }
   }
 
   private mapSwishStatus(status: SwishPaymentStatus): PaymentSessionStatus {
