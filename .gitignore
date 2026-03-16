@@ -3,3 +3,9 @@ dist/
 .turbo/
 .medusa/
 *.tsbuildinfo
+.DS_Store
+
+# Local dev — plans, rules, docs (not published to GitHub)
+.cursor/
+.github/
+docs/
