@@ -25,6 +25,7 @@ export type PostNordServiceId =
 export type PostNordFulfillmentOption = {
   id: PostNordServiceId
   name: string
+  is_return: boolean
   requires_pickup_point: boolean
   max_weight_kg: number
 }

@@ -1,5 +1,13 @@
-import { AbstractFulfillmentProvider, MedusaError } from "@medusajs/framework/utils"
-import { Logger } from "@medusajs/framework/types"
+import { AbstractFulfillmentProviderService, MedusaError } from "@medusajs/framework/utils"
+import type {
+  Logger,
+  FulfillmentOption,
+  CalculatedShippingOptionPrice,
+  CreateFulfillmentResult,
+  FulfillmentItemDTO,
+  FulfillmentOrderDTO,
+  FulfillmentDTO,
+} from "@medusajs/framework/types"
 import { PostNordClient } from "./client"
 import type {
   PostNordOptions,
@@ -13,34 +21,41 @@ type InjectedDependencies = {
   logger: Logger
 }
 
+const TRACKING_URL_BASE = "https://tracking.postnord.com/tracking?id="
+
 const FULFILLMENT_OPTIONS: PostNordFulfillmentOption[] = [
   {
     id: "mypack_home",
     name: "PostNord MyPack Home",
+    is_return: false,
     requires_pickup_point: false,
     max_weight_kg: 20,
   },
   {
     id: "mypack_collect",
     name: "PostNord MyPack Collect",
+    is_return: false,
     requires_pickup_point: true,
     max_weight_kg: 20,
   },
   {
     id: "parcel",
     name: "PostNord Parcel",
+    is_return: false,
     requires_pickup_point: false,
     max_weight_kg: 30,
   },
   {
     id: "pallet",
     name: "PostNord Pallet",
+    is_return: false,
     requires_pickup_point: false,
     max_weight_kg: 1000,
   },
   {
     id: "return",
     name: "PostNord Return",
+    is_return: true,
     requires_pickup_point: false,
     max_weight_kg: 20,
   },
@@ -48,14 +63,12 @@ const FULFILLMENT_OPTIONS: PostNordFulfillmentOption[] = [
 
 const SERVICE_MAP = new Map(FULFILLMENT_OPTIONS.map((o) => [o.id, o]))
 
-class PostNordFulfillmentService extends AbstractFulfillmentProvider {
+class PostNordFulfillmentService extends AbstractFulfillmentProviderService {
   static identifier = "postnord"
 
   protected logger_: Logger
   protected options_: PostNordOptions
   protected client: PostNordClient
-
-  // ── Validate provider options at startup ──
 
   static validateOptions(options: Record<any, any>) {
     if (!options.apiKey) {
@@ -86,7 +99,7 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
   }
 
   constructor(container: InjectedDependencies, options: PostNordOptions) {
-    super(container, options)
+    super()
     this.logger_ = container.logger
     this.options_ = options
     this.client = new PostNordClient({
@@ -98,8 +111,14 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
 
   // ── Available shipping options ──
 
-  async getFulfillmentOptions(): Promise<Record<string, unknown>[]> {
-    return FULFILLMENT_OPTIONS.map((o) => ({ ...o }))
+  async getFulfillmentOptions(): Promise<FulfillmentOption[]> {
+    return FULFILLMENT_OPTIONS.map((o) => ({
+      id: o.id,
+      name: o.name,
+      is_return: o.is_return,
+      requires_pickup_point: o.requires_pickup_point,
+      max_weight_kg: o.max_weight_kg,
+    }))
   }
 
   // ── Validate fulfillment data (recipient, weight, service constraints) ──
@@ -160,7 +179,7 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
     optionData: Record<string, unknown>,
     data: Record<string, unknown>,
     context: Record<string, unknown>
-  ): Promise<number> {
+  ): Promise<CalculatedShippingOptionPrice> {
     const serviceId = (optionData.id ?? data.service_id) as string
     const shippingAddress = context.shipping_address as
       | Record<string, unknown>
@@ -170,7 +189,10 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
       this.logger_.warn(
         "PostNord calculatePrice: missing shipping address, returning 0"
       )
-      return 0
+      return {
+        calculated_amount: 0,
+        is_calculated_price_tax_inclusive: true,
+      }
     }
 
     try {
@@ -183,12 +205,18 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
         weight_grams: Number(data.weight_grams ?? 1000),
       })
 
-      return rate.price
+      return {
+        calculated_amount: rate.price,
+        is_calculated_price_tax_inclusive: true,
+      }
     } catch (error) {
       this.logger_.error(
         `PostNord calculatePrice failed: ${(error as Error).message}`
       )
-      return 0
+      return {
+        calculated_amount: 0,
+        is_calculated_price_tax_inclusive: true,
+      }
     }
   }
 
@@ -196,13 +224,26 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
 
   async createFulfillment(
     data: Record<string, unknown>,
-    items: Record<string, unknown>[],
-    order: Record<string, unknown>,
-    fulfillment: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
+    items: Partial<Omit<FulfillmentItemDTO, "fulfillment">>[],
+    order: Partial<FulfillmentOrderDTO> | undefined,
+    fulfillment: Partial<Omit<FulfillmentDTO, "provider_id" | "data" | "items">>
+  ): Promise<CreateFulfillmentResult> {
     const serviceId = (data.service_id ?? data.id) as string
-    const shippingAddress = (order.shipping_address ??
-      data.shipping_address) as Record<string, unknown> | undefined
+
+    const deliveryAddress = fulfillment.delivery_address
+    const shippingAddress = deliveryAddress
+      ? {
+          first_name: deliveryAddress.first_name,
+          last_name: deliveryAddress.last_name,
+          company: deliveryAddress.company,
+          address_1: deliveryAddress.address_1,
+          address_2: deliveryAddress.address_2,
+          city: deliveryAddress.city,
+          country_code: deliveryAddress.country_code,
+          postal_code: deliveryAddress.postal_code,
+          phone: deliveryAddress.phone,
+        }
+      : (data.shipping_address as Record<string, unknown> | undefined)
 
     if (!shippingAddress) {
       throw new MedusaError(
@@ -240,7 +281,7 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
       senderAddress: this.options_.senderAddress,
       recipientAddress,
       parcels,
-      reference: (order.display_id ?? order.id) as string | undefined,
+      reference: fulfillment.id,
       servicePointId: data.service_point_id as string | undefined,
     })
 
@@ -249,11 +290,20 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
     )
 
     return {
-      shipment_id: shipment.shipmentId,
-      booking_ref: shipment.bookingRef,
-      tracking_number: shipment.trackingNumber,
-      label_url: shipment.labelUrl,
-      parcels: shipment.parcels,
+      data: {
+        shipment_id: shipment.shipmentId,
+        booking_ref: shipment.bookingRef,
+        tracking_number: shipment.trackingNumber,
+        label_url: shipment.labelUrl,
+        parcels: shipment.parcels,
+      },
+      labels: [
+        {
+          tracking_number: shipment.trackingNumber,
+          tracking_url: `${TRACKING_URL_BASE}${shipment.trackingNumber}`,
+          label_url: shipment.labelUrl ?? "",
+        },
+      ],
     }
   }
 
@@ -261,10 +311,15 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
 
   async createReturnFulfillment(
     fulfillment: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
+  ): Promise<CreateFulfillmentResult> {
     const data = fulfillment.data as Record<string, unknown> | undefined
-    const shippingAddress = (fulfillment.shipping_address ??
-      data?.shipping_address) as Record<string, unknown> | undefined
+    const deliveryAddress = fulfillment.delivery_address as
+      | Record<string, unknown>
+      | undefined
+
+    const shippingAddress = deliveryAddress ?? data?.shipping_address as
+      | Record<string, unknown>
+      | undefined
 
     const recipientName = shippingAddress
       ? [shippingAddress.first_name, shippingAddress.last_name]
@@ -305,25 +360,31 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
     )
 
     return {
-      shipment_id: returnShipment.shipmentId,
-      booking_ref: returnShipment.bookingRef,
-      tracking_number: returnShipment.trackingNumber,
-      label_url: returnShipment.labelUrl,
-      is_return: true,
+      data: {
+        shipment_id: returnShipment.shipmentId,
+        booking_ref: returnShipment.bookingRef,
+        tracking_number: returnShipment.trackingNumber,
+        label_url: returnShipment.labelUrl,
+        is_return: true,
+      },
+      labels: [
+        {
+          tracking_number: returnShipment.trackingNumber,
+          tracking_url: `${TRACKING_URL_BASE}${returnShipment.trackingNumber}`,
+          label_url: returnShipment.labelUrl ?? "",
+        },
+      ],
     }
   }
 
   // ── Cancel fulfillment ──
 
-  async cancelFulfillment(
-    fulfillment: Record<string, unknown>
-  ): Promise<Record<string, unknown>> {
-    const data = fulfillment.data as Record<string, unknown> | undefined
-    const shipmentId = data?.shipment_id as string | undefined
+  async cancelFulfillment(data: Record<string, unknown>): Promise<any> {
+    const shipmentId = data.shipment_id as string | undefined
 
     if (!shipmentId) {
       this.logger_.warn("PostNord cancelFulfillment: no shipment_id in data")
-      return {}
+      return
     }
 
     try {
@@ -335,54 +396,34 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider {
       )
       throw error
     }
-
-    return { cancelled: true, shipment_id: shipmentId }
   }
 
-  // ── Documents (PDF labels) ──
+  // ── Documents ──
 
   async getFulfillmentDocuments(
     data: Record<string, unknown>
-  ): Promise<Record<string, unknown>[]> {
-    const shipmentId = data.shipment_id as string | undefined
-
-    if (!shipmentId) {
-      return []
-    }
-
-    if (data.label_url) {
-      return [
-        {
-          type: "label",
-          format: "pdf",
-          url: data.label_url as string,
-          name: `postnord-label-${shipmentId}.pdf`,
-        },
-      ]
-    }
-
-    try {
-      const label = await this.client.getLabel(shipmentId)
-      return [
-        {
-          type: "label",
-          format: label.format,
-          url: label.url,
-          name: `postnord-label-${shipmentId}.${label.format}`,
-        },
-      ]
-    } catch (error) {
-      this.logger_.error(
-        `PostNord getFulfillmentDocuments failed: ${(error as Error).message}`
-      )
-      return []
-    }
+  ): Promise<never[]> {
+    return [] as never[]
   }
 
   async getReturnDocuments(
     data: Record<string, unknown>
-  ): Promise<Record<string, unknown>[]> {
-    return this.getFulfillmentDocuments(data)
+  ): Promise<never[]> {
+    return [] as never[]
+  }
+
+  async getShipmentDocuments(
+    data: Record<string, unknown>
+  ): Promise<never[]> {
+    return [] as never[]
+  }
+
+  async retrieveDocuments(
+    fulfillmentData: Record<string, unknown>,
+    documentType: string
+  ): Promise<void> {
+    // PostNord labels are returned inline in createFulfillment via the labels array.
+    // For on-demand retrieval, the label_url in fulfillment data can be used directly.
   }
 }
 

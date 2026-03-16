@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import PostNordFulfillmentService from "../service"
-import { MedusaError } from "@medusajs/framework/utils"
 
 const mockLogger = {
   info: vi.fn(),
@@ -96,7 +95,7 @@ describe("PostNordFulfillmentService", () => {
   // ── getFulfillmentOptions ──
 
   describe("getFulfillmentOptions", () => {
-    it("returns all service types", async () => {
+    it("returns all service types with is_return", async () => {
       const service = createService()
       const options = await service.getFulfillmentOptions()
 
@@ -115,7 +114,7 @@ describe("PostNordFulfillmentService", () => {
       const options = await service.getFulfillmentOptions()
       const collect = options.find((o) => o.id === "mypack_collect")
 
-      expect(collect?.requires_pickup_point).toBe(true)
+      expect((collect as any).requires_pickup_point).toBe(true)
     })
 
     it("pallet supports up to 1000kg", async () => {
@@ -123,7 +122,25 @@ describe("PostNordFulfillmentService", () => {
       const options = await service.getFulfillmentOptions()
       const pallet = options.find((o) => o.id === "pallet")
 
-      expect(pallet?.max_weight_kg).toBe(1000)
+      expect((pallet as any).max_weight_kg).toBe(1000)
+    })
+
+    it("return option has is_return=true", async () => {
+      const service = createService()
+      const options = await service.getFulfillmentOptions()
+      const returnOpt = options.find((o) => o.id === "return")
+
+      expect(returnOpt?.is_return).toBe(true)
+    })
+
+    it("non-return options have is_return=false", async () => {
+      const service = createService()
+      const options = await service.getFulfillmentOptions()
+      const nonReturn = options.filter((o) => o.id !== "return")
+
+      for (const opt of nonReturn) {
+        expect(opt.is_return).toBe(false)
+      }
     })
   })
 
@@ -225,16 +242,19 @@ describe("PostNordFulfillmentService", () => {
   // ── calculatePrice ──
 
   describe("calculatePrice", () => {
-    it("returns 0 when shipping address is missing", async () => {
+    it("returns CalculatedShippingOptionPrice with 0 when address is missing", async () => {
       const service = createService()
 
-      const price = await service.calculatePrice(
+      const result = await service.calculatePrice(
         { id: "mypack_home" },
         { weight_grams: 1000 },
         {}
       )
 
-      expect(price).toBe(0)
+      expect(result).toEqual({
+        calculated_amount: 0,
+        is_calculated_price_tax_inclusive: true,
+      })
       expect(mockLogger.warn).toHaveBeenCalled()
     })
   })
@@ -249,8 +269,8 @@ describe("PostNordFulfillmentService", () => {
         service.createFulfillment(
           { service_id: "mypack_home" },
           [],
-          {},
-          {}
+          undefined,
+          {} as any
         )
       ).rejects.toThrow("shipping address is required")
     })
@@ -259,12 +279,11 @@ describe("PostNordFulfillmentService", () => {
   // ── cancelFulfillment ──
 
   describe("cancelFulfillment", () => {
-    it("returns empty when no shipment_id present", async () => {
+    it("logs warning when no shipment_id present", async () => {
       const service = createService()
 
-      const result = await service.cancelFulfillment({ data: {} })
+      await service.cancelFulfillment({})
 
-      expect(result).toEqual({})
       expect(mockLogger.warn).toHaveBeenCalled()
     })
   })
@@ -272,38 +291,45 @@ describe("PostNordFulfillmentService", () => {
   // ── getFulfillmentDocuments ──
 
   describe("getFulfillmentDocuments", () => {
-    it("returns empty array when no shipment_id", async () => {
+    it("returns empty array", async () => {
       const service = createService()
       const docs = await service.getFulfillmentDocuments({})
 
       expect(docs).toEqual([])
-    })
-
-    it("returns label document when label_url is present", async () => {
-      const service = createService()
-      const docs = await service.getFulfillmentDocuments({
-        shipment_id: "SHP123",
-        label_url: "https://example.com/label.pdf",
-      })
-
-      expect(docs).toHaveLength(1)
-      expect(docs[0].type).toBe("label")
-      expect(docs[0].url).toBe("https://example.com/label.pdf")
     })
   })
 
   // ── getReturnDocuments ──
 
   describe("getReturnDocuments", () => {
-    it("delegates to getFulfillmentDocuments", async () => {
+    it("returns empty array", async () => {
       const service = createService()
-      const docs = await service.getReturnDocuments({
-        shipment_id: "SHP456",
-        label_url: "https://example.com/return.pdf",
-      })
+      const docs = await service.getReturnDocuments({})
 
-      expect(docs).toHaveLength(1)
-      expect(docs[0].name).toContain("postnord-label-SHP456")
+      expect(docs).toEqual([])
+    })
+  })
+
+  // ── getShipmentDocuments ──
+
+  describe("getShipmentDocuments", () => {
+    it("returns empty array", async () => {
+      const service = createService()
+      const docs = await service.getShipmentDocuments({})
+
+      expect(docs).toEqual([])
+    })
+  })
+
+  // ── retrieveDocuments ──
+
+  describe("retrieveDocuments", () => {
+    it("completes without error", async () => {
+      const service = createService()
+
+      await expect(
+        service.retrieveDocuments({}, "label")
+      ).resolves.toBeUndefined()
     })
   })
 })
