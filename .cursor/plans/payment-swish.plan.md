@@ -4,43 +4,43 @@ overview: Build @peyya/medusa-payment-swish -- Sweden's most popular mobile paym
 todos:
   - id: swish-scaffold
     content: "Phase 1: Scaffold packages/payment-swish/ -- package.json, tsconfig, directory structure"
-    status: pending
+    status: completed
   - id: swish-types
     content: "Phase 2: Define SwishOptions, SwishPaymentRequest, SwishCallback, SwishRefund types"
-    status: pending
+    status: completed
   - id: swish-client
     content: "Phase 3: Implement Swish HTTP client with mTLS (P12/PEM cert loading, test/prod endpoints, payment + refund methods)"
-    status: pending
+    status: completed
   - id: swish-validate
     content: "Phase 4.1: Implement static validateOptions -- require certificatePath, callbackUrl, payeeAlias"
-    status: pending
+    status: completed
   - id: swish-initiate
     content: "Phase 4.2: Implement initiatePayment -- create Swish payment request, store session_id, return token"
-    status: pending
+    status: completed
   - id: swish-authorize
     content: "Phase 4.3: Implement authorizePayment -- return pending (Swish is async, real auth comes via webhook)"
-    status: pending
+    status: completed
   - id: swish-webhook
     content: "Phase 4.4: Implement getWebhookActionAndData -- verify callback, map PAID/DECLINED/ERROR to Medusa actions"
-    status: pending
+    status: completed
   - id: swish-capture
     content: "Phase 4.5: Implement capturePayment -- no-op (Swish auto-captures on PAID)"
-    status: pending
+    status: completed
   - id: swish-refund
     content: "Phase 4.6: Implement refundPayment -- call Swish refund API, handle partial refunds"
-    status: pending
+    status: completed
   - id: swish-remaining
     content: "Phase 4.7: Implement cancelPayment, deletePayment, getPaymentStatus, retrievePayment, updatePayment"
-    status: pending
+    status: completed
   - id: swish-export
     content: "Phase 5: Create index.ts with ModuleProvider(Modules.PAYMENT, { services: [SwishProviderService] })"
-    status: pending
+    status: completed
   - id: swish-tests
     content: "Phase 6: Write Vitest unit tests for all provider methods and client with mocked Swish API"
-    status: pending
+    status: completed
   - id: swish-readme
     content: "Phase 7: Write README (install, cert setup, config, webhook URL) and verify build with npx medusa plugin:build"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -166,19 +166,21 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions>
 
 ### Method implementation map
 
-| Method                     | Swish behavior                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `validateOptions` (static) | Require `certificatePath`, `callbackUrl`, `payeeAlias`                                                       |
+
+| Method                     | Swish behavior                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `validateOptions` (static) | Require `certificatePath`, `callbackUrl`, `payeeAlias`                                                        |
 | `initiatePayment`          | Create Swish payment request; store `paymentRequestId` + token in session data; return token for QR/deep link |
-| `authorizePayment`         | Return `{ status: "pending", data }` -- Swish is async, real auth comes via webhook                          |
-| `getWebhookActionAndData`  | Parse Swish callback; map PAID→authorized+captured, DECLINED/ERROR→failed; extract session_id                |
-| `capturePayment`           | No-op -- Swish auto-captures on PAID; return existing data                                                   |
+| `authorizePayment`         | Return `{ status: "pending", data }` -- Swish is async, real auth comes via webhook                           |
+| `getWebhookActionAndData`  | Parse Swish callback; map PAID→authorized+captured, DECLINED/ERROR→failed; extract session_id                 |
+| `capturePayment`           | No-op -- Swish auto-captures on PAID; return existing data                                                    |
 | `refundPayment`            | Call Swish refund API; handle partial refunds                                                                 |
-| `cancelPayment`            | Cancel pending request (PATCH if status=CREATED)                                                             |
-| `deletePayment`            | Same as cancel -- cleanup pending request                                                                    |
-| `getPaymentStatus`         | Fetch current status from Swish API, map to Medusa status                                                    |
-| `retrievePayment`          | Fetch payment request details from Swish API                                                                 |
-| `updatePayment`            | Cancel old request + create new one if amount changed                                                        |
+| `cancelPayment`            | Cancel pending request (PATCH if status=CREATED)                                                              |
+| `deletePayment`            | Same as cancel -- cleanup pending request                                                                     |
+| `getPaymentStatus`         | Fetch current status from Swish API, map to Medusa status                                                     |
+| `retrievePayment`          | Fetch payment request details from Swish API                                                                  |
+| `updatePayment`            | Cancel old request + create new one if amount changed                                                         |
+
 
 ### Amount conversion
 
@@ -219,6 +221,8 @@ sequenceDiagram
 
     Note over Medusa: Payment auto-captured (Swish is instant)
 ```
+
+
 
 ---
 
@@ -298,3 +302,4 @@ Webhook route: `POST /hooks/payment/swish_swish` (auto-exposed by Medusa).
 - **Auto-capture** -- Swish captures immediately on PAID; `capturePayment` is a no-op
 - **session_id via payeePaymentReference** -- Swish's reference field is the bridge between webhook callbacks and Medusa payment sessions
 - **Amount as integer string** -- Medusa stores decimals, Swish expects integer string in SEK (no öre)
+

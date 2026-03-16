@@ -4,49 +4,49 @@ overview: Build @peyya/medusa-fulfillment-postnord -- Nordic postal leader with 
 todos:
   - id: postnord-scaffold
     content: "Phase 1: Scaffold packages/fulfillment-postnord/ -- package.json, tsconfig, directory structure"
-    status: pending
+    status: completed
   - id: postnord-types
     content: "Phase 2: Define PostNordOptions, shipment/tracking/service-point types"
-    status: pending
+    status: completed
   - id: postnord-client
     content: "Phase 3: Implement PostNord API client (Transport Solutions, Shipment, Tracking, ServicePoint APIs)"
-    status: pending
+    status: completed
   - id: postnord-validate
     content: "Phase 4.1: Implement validateOptions -- require API key, customer number, sender address"
-    status: pending
+    status: completed
   - id: postnord-options
     content: "Phase 4.2: Implement getFulfillmentOptions -- MyPack Home, Collect, Return, Pallet"
-    status: pending
+    status: completed
   - id: postnord-validate-data
     content: "Phase 4.3: Implement validateFulfillmentData and validateOption"
-    status: pending
+    status: completed
   - id: postnord-price
     content: "Phase 4.4: Implement calculatePrice via PostNord rate API"
-    status: pending
+    status: completed
   - id: postnord-create
     content: "Phase 4.5: Implement createFulfillment -- book shipment, get tracking number"
-    status: pending
+    status: completed
   - id: postnord-return
     content: "Phase 4.6: Implement createReturnFulfillment -- generate return labels"
-    status: pending
+    status: completed
   - id: postnord-cancel
     content: "Phase 4.7: Implement cancelFulfillment"
-    status: pending
+    status: completed
   - id: postnord-docs
     content: "Phase 4.8: Implement getFulfillmentDocuments and getReturnDocuments (PDF labels)"
-    status: pending
+    status: completed
   - id: postnord-pickup
     content: "Phase 5: Add pickup point lookup API route (GET /store/fulfillment/postnord/service-points)"
-    status: pending
+    status: completed
   - id: postnord-tracking
     content: "Phase 6: Implement tracking integration via PostNord Tracking API"
-    status: pending
+    status: completed
   - id: postnord-export
     content: "Phase 7: Create index.ts with ModuleProvider export"
-    status: pending
+    status: completed
   - id: postnord-tests
     content: "Phase 8: Write Vitest unit tests and README"
-    status: pending
+    status: completed
 isProject: false
 ---
 
@@ -148,29 +148,33 @@ class PostNordFulfillmentService extends AbstractFulfillmentProvider
 
 ### Method implementation map
 
-| Method                      | PostNord behavior                                                                   |
-| --------------------------- | ----------------------------------------------------------------------------------- |
-| `validateOptions` (static)  | Require `apiKey`, `customerNumber`, `senderAddress`                                 |
-| `getFulfillmentOptions`     | Return available services: MyPack Home, MyPack Collect, Parcel, Pallet, Return      |
-| `validateFulfillmentData`   | Validate recipient address, weight, dimensions against service rules                |
-| `validateOption`            | Validate option data structure                                                      |
-| `canCalculate`              | Return true (PostNord supports rate calculation)                                    |
-| `calculatePrice`            | Call PostNord rate API with weight, dimensions, zone                                |
-| `createFulfillment`         | Book shipment via Shipment API; return tracking number + booking ref                |
-| `createReturnFulfillment`   | Generate return label via Transport Solutions API                                   |
-| `cancelFulfillment`         | Cancel PostNord shipment booking                                                    |
-| `getFulfillmentDocuments`   | Retrieve shipping label PDF from Transport Solutions API                            |
-| `getReturnDocuments`        | Retrieve return label PDF                                                           |
+
+| Method                     | PostNord behavior                                                              |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `validateOptions` (static) | Require `apiKey`, `customerNumber`, `senderAddress`                            |
+| `getFulfillmentOptions`    | Return available services: MyPack Home, MyPack Collect, Parcel, Pallet, Return |
+| `validateFulfillmentData`  | Validate recipient address, weight, dimensions against service rules           |
+| `validateOption`           | Validate option data structure                                                 |
+| `canCalculate`             | Return true (PostNord supports rate calculation)                               |
+| `calculatePrice`           | Call PostNord rate API with weight, dimensions, zone                           |
+| `createFulfillment`        | Book shipment via Shipment API; return tracking number + booking ref           |
+| `createReturnFulfillment`  | Generate return label via Transport Solutions API                              |
+| `cancelFulfillment`        | Cancel PostNord shipment booking                                               |
+| `getFulfillmentDocuments`  | Retrieve shipping label PDF from Transport Solutions API                       |
+| `getReturnDocuments`       | Retrieve return label PDF                                                      |
+
 
 ### Service types
 
-| Service ID       | Description             | Pickup point required | Weight limit |
-| ---------------- | ----------------------- | --------------------- | ------------ |
-| `mypack_home`    | Home delivery           | No                    | 20 kg        |
-| `mypack_collect` | Pickup point delivery   | Yes                   | 20 kg        |
-| `parcel`         | Standard parcel         | No                    | 30 kg        |
-| `pallet`         | Pallet delivery         | No                    | 1000 kg      |
-| `return`         | Return label            | No                    | 20 kg        |
+
+| Service ID       | Description           | Pickup point required | Weight limit |
+| ---------------- | --------------------- | --------------------- | ------------ |
+| `mypack_home`    | Home delivery         | No                    | 20 kg        |
+| `mypack_collect` | Pickup point delivery | Yes                   | 20 kg        |
+| `parcel`         | Standard parcel       | No                    | 30 kg        |
+| `pallet`         | Pallet delivery       | No                    | 1000 kg      |
+| `return`         | Return label          | No                    | 20 kg        |
+
 
 ---
 
@@ -246,3 +250,4 @@ module.exports = defineConfig({
 - Available services and their constraints
 - Pickup point integration guide for storefronts
 - Tracking integration
+

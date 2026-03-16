@@ -4,40 +4,40 @@ overview: Build @peyya/medusa-payment-qliro -- Swedish checkout platform with em
 todos:
   - id: qliro-scaffold
     content: "Phase 1: Scaffold packages/payment-qliro/ -- package.json, tsconfig, directory structure"
-    status: pending
+    status: completed
   - id: qliro-types
     content: "Phase 2: Define QliroOptions, QliroCheckoutOrder, QliroCallback types"
-    status: pending
+    status: completed
   - id: qliro-client
     content: "Phase 3: Implement Qliro API client (Qliro One Checkout API, Order Management API)"
-    status: pending
+    status: completed
   - id: qliro-validate
     content: "Phase 4.1: Implement static validateOptions -- require apiKey, merchantId"
-    status: pending
+    status: completed
   - id: qliro-initiate
     content: "Phase 4.2: Implement initiatePayment -- create Qliro checkout session, return checkout snippet/URL"
-    status: pending
+    status: completed
   - id: qliro-authorize
     content: "Phase 4.3: Implement authorizePayment -- verify Qliro order completion status"
-    status: pending
+    status: completed
   - id: qliro-webhook
     content: "Phase 4.4: Implement getWebhookActionAndData -- handle Qliro checkout callbacks"
-    status: pending
+    status: completed
   - id: qliro-lifecycle
     content: "Phase 4.5: Implement capturePayment, refundPayment, cancelPayment via Order Management API"
-    status: pending
+    status: completed
   - id: qliro-remaining
     content: "Phase 4.6: Implement deletePayment, getPaymentStatus, retrievePayment, updatePayment"
-    status: pending
+    status: completed
   - id: qliro-export
     content: "Phase 5: Create index.ts with ModuleProvider export"
-    status: pending
+    status: completed
   - id: qliro-tests
     content: "Phase 6: Write Vitest unit tests with mocked Qliro API"
-    status: pending
+    status: completed
   - id: qliro-readme
     content: "Phase 7: Write README and verify build"
-    status: pending
+    status: completed
 isProject: false
 ---
 
