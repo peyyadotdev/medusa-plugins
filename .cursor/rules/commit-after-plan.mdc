@@ -1,0 +1,27 @@
+---
+description: After implementing a plan, commit changes to git using conventional commits. Applies when completing plan todos or finishing plan implementation phases.
+alwaysApply: true
+---
+
+# Commit After Plan Implementation
+
+When you have finished implementing a plan (all todos completed, or a significant phase completed):
+
+1. **Always commit** the resulting files to git
+2. **Use conventional commits** format: `type(scope): description`
+3. **Common types for plan work:**
+   - `feat(scope)` -- new plugin, module, or feature implementation
+   - `chore(scope)` -- infrastructure, tooling, config changes
+   - `docs(scope)` -- documentation or plan files only
+4. **Scope** should be the plugin/package name or category (e.g., `infra`, `payment-swish`, `fulfillment`, `auth`)
+5. **Git user:** commits should use the repo's configured git identity (Daniel Dahlström / danadalis@icloud.com)
+6. **Do NOT push** unless explicitly asked
+
+### Examples
+
+```
+chore(infra): scaffold monorepo with pnpm, turborepo, and changesets
+feat(payment-swish): implement Swish payment provider
+docs(plans): add plan files for all plugin categories
+chore(infra): add GitHub Actions CI/CD workflows
+```

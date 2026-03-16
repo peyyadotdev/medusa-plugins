@@ -1,0 +1,78 @@
+---
+description: Monorepo structure and conventions for this Medusa plugins repository. Enforces naming, directory layout, dependency management, and publishing patterns across all plugin categories (payments, fulfillment, auth, intelligence, agentic commerce).
+alwaysApply: true
+---
+
+# Monorepo Plugin Structure
+
+## Directory Layout
+
+```
+medusa-plugins/
+├── packages/
+│   ├── payment-{name}/              # @peyya/medusa-payment-{name}
+│   │   └── src/providers/{name}/
+│   ├── fulfillment-{name}/          # @peyya/medusa-fulfillment-{name}
+│   │   └── src/providers/{name}/
+│   ├── auth-{name}/                 # @peyya/medusa-auth-{name}
+│   │   └── src/providers/{name}/
+│   ├── plugin-{name}/               # @peyya/medusa-plugin-{name}
+│   │   └── src/modules/{name}/
+│   └── sdk/                         # @peyya/medusa-plugins (umbrella)
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── plugins/                     # Category-level design docs
+│   └── providers/                   # Provider-specific implementation docs
+├── turbo.json
+├── pnpm-workspace.yaml
+└── package.json
+```
+
+## Naming Conventions
+
+| Type | Package Name | Directory |
+|------|-------------|-----------|
+| Payment provider | `@peyya/medusa-payment-{name}` | `packages/payment-{name}/` |
+| Fulfillment provider | `@peyya/medusa-fulfillment-{name}` | `packages/fulfillment-{name}/` |
+| Auth provider | `@peyya/medusa-auth-{name}` | `packages/auth-{name}/` |
+| Feature plugin | `@peyya/medusa-plugin-{name}` | `packages/plugin-{name}/` |
+| Umbrella SDK | `@peyya/medusa-plugins` | `packages/sdk/` |
+
+Module names MUST be camelCase (never dashes): `"recommendations"`, `"searchIntelligence"`, `"agenticCommerce"`
+
+## Architecture Mapping
+
+| Category | Base Class | Export | Plugin Path |
+|----------|-----------|--------|-------------|
+| Payments | `AbstractPaymentProvider` | `ModuleProvider(Modules.PAYMENT, ...)` | `src/providers/` |
+| Fulfillment | `AbstractFulfillmentProvider` | `ModuleProvider(Modules.FULFILLMENT, ...)` | `src/providers/` |
+| Auth | `AbstractAuthModuleProvider` | `ModuleProvider(Modules.AUTH, ...)` | `src/providers/` |
+| Intelligence | `MedusaService` | `Module(...)` | `src/modules/` |
+| Agentic Commerce | `MedusaService` | `Module(...)` | `src/modules/` + `src/api/` |
+
+## Dependency Rules
+
+- `@medusajs/framework` → `devDependencies` + `peerDependencies` (same version range)
+- Third-party SDKs (stripe, klarna, postnord-api) → `dependencies`
+- `@swc/core` → `devDependencies` (required by Medusa plugin CLI)
+- Shared workspace packages → `"workspace:*"` protocol
+- Never pin exact Medusa versions across packages
+
+## NPM Keywords (required for all packages)
+
+- `medusa-v2` + `medusa-plugin-integration`
+- Category: `medusa-plugin-payment`, `medusa-plugin-shipping`, `medusa-plugin-auth`, or `medusa-plugin-other`
+
+## Build & Publish
+
+- Each package builds with `npx medusa plugin:build`
+- Changesets for independent versioning per package
+- Turborepo caches builds and runs only changed packages
+- Never publish packages that don't pass `tsc --noEmit`
+
+## Linear Integration
+
+- Initiative: "Medusa JS Plugins"
+- Projects: one per category (Monorepo Infrastructure, Payments, Fulfillment, Auth, Intelligence, Agentic Commerce)
+- Milestones: one per provider/plugin within each project
+- Consult `docs/ARCHITECTURE.md` for the master plan
