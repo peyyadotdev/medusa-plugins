@@ -1,0 +1,389 @@
+import { AbstractFulfillmentProvider, MedusaError } from "@medusajs/framework/utils"
+import { Logger } from "@medusajs/framework/types"
+import { PostNordClient } from "./client"
+import type {
+  PostNordOptions,
+  PostNordFulfillmentOption,
+  PostNordServiceId,
+  PostNordRecipient,
+  PostNordParcelDimensions,
+} from "./types"
+
+type InjectedDependencies = {
+  logger: Logger
+}
+
+const FULFILLMENT_OPTIONS: PostNordFulfillmentOption[] = [
+  {
+    id: "mypack_home",
+    name: "PostNord MyPack Home",
+    requires_pickup_point: false,
+    max_weight_kg: 20,
+  },
+  {
+    id: "mypack_collect",
+    name: "PostNord MyPack Collect",
+    requires_pickup_point: true,
+    max_weight_kg: 20,
+  },
+  {
+    id: "parcel",
+    name: "PostNord Parcel",
+    requires_pickup_point: false,
+    max_weight_kg: 30,
+  },
+  {
+    id: "pallet",
+    name: "PostNord Pallet",
+    requires_pickup_point: false,
+    max_weight_kg: 1000,
+  },
+  {
+    id: "return",
+    name: "PostNord Return",
+    requires_pickup_point: false,
+    max_weight_kg: 20,
+  },
+]
+
+const SERVICE_MAP = new Map(FULFILLMENT_OPTIONS.map((o) => [o.id, o]))
+
+class PostNordFulfillmentService extends AbstractFulfillmentProvider {
+  static identifier = "postnord"
+
+  protected logger_: Logger
+  protected options_: PostNordOptions
+  protected client: PostNordClient
+
+  // ── Validate provider options at startup ──
+
+  static validateOptions(options: Record<any, any>) {
+    if (!options.apiKey) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "PostNord: apiKey is required in provider options."
+      )
+    }
+    if (!options.customerNumber) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "PostNord: customerNumber is required in provider options."
+      )
+    }
+    if (!options.senderAddress) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "PostNord: senderAddress is required in provider options."
+      )
+    }
+    const sa = options.senderAddress
+    if (!sa.name || !sa.street || !sa.postalCode || !sa.city || !sa.countryCode) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "PostNord: senderAddress must include name, street, postalCode, city, and countryCode."
+      )
+    }
+  }
+
+  constructor(container: InjectedDependencies, options: PostNordOptions) {
+    super(container, options)
+    this.logger_ = container.logger
+    this.options_ = options
+    this.client = new PostNordClient({
+      apiKey: options.apiKey,
+      customerNumber: options.customerNumber,
+      environment: options.environment ?? "test",
+    })
+  }
+
+  // ── Available shipping options ──
+
+  async getFulfillmentOptions(): Promise<Record<string, unknown>[]> {
+    return FULFILLMENT_OPTIONS.map((o) => ({ ...o }))
+  }
+
+  // ── Validate fulfillment data (recipient, weight, service constraints) ──
+
+  async validateFulfillmentData(
+    optionData: Record<string, unknown>,
+    data: Record<string, unknown>,
+    context: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const serviceId = optionData.id as PostNordServiceId | undefined
+    const service = serviceId ? SERVICE_MAP.get(serviceId) : undefined
+
+    if (!service) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `PostNord: unknown service "${serviceId}".`
+      )
+    }
+
+    if (service.requires_pickup_point && !data.service_point_id) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `PostNord: service "${serviceId}" requires a service_point_id.`
+      )
+    }
+
+    const weightGrams = Number(data.weight_grams ?? context.weight_grams ?? 0)
+    if (weightGrams > service.max_weight_kg * 1000) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `PostNord: weight ${weightGrams}g exceeds max ${service.max_weight_kg}kg for "${serviceId}".`
+      )
+    }
+
+    return {
+      ...data,
+      service_id: serviceId,
+      weight_grams: weightGrams,
+    }
+  }
+
+  // ── Validate option data structure ──
+
+  async validateOption(data: Record<string, unknown>): Promise<boolean> {
+    const serviceId = data.id as string | undefined
+    if (!serviceId) return false
+    return SERVICE_MAP.has(serviceId as PostNordServiceId)
+  }
+
+  // ── Price calculation ──
+
+  async canCalculate(data: Record<string, unknown>): Promise<boolean> {
+    const serviceId = data.id as string | undefined
+    return serviceId ? SERVICE_MAP.has(serviceId as PostNordServiceId) : false
+  }
+
+  async calculatePrice(
+    optionData: Record<string, unknown>,
+    data: Record<string, unknown>,
+    context: Record<string, unknown>
+  ): Promise<number> {
+    const serviceId = (optionData.id ?? data.service_id) as string
+    const shippingAddress = context.shipping_address as
+      | Record<string, unknown>
+      | undefined
+
+    if (!shippingAddress?.postal_code || !shippingAddress?.country_code) {
+      this.logger_.warn(
+        "PostNord calculatePrice: missing shipping address, returning 0"
+      )
+      return 0
+    }
+
+    try {
+      const rate = await this.client.getRate({
+        serviceId,
+        fromPostalCode: this.options_.senderAddress.postalCode,
+        fromCountryCode: this.options_.senderAddress.countryCode,
+        toPostalCode: shippingAddress.postal_code as string,
+        toCountryCode: shippingAddress.country_code as string,
+        weight_grams: Number(data.weight_grams ?? 1000),
+      })
+
+      return rate.price
+    } catch (error) {
+      this.logger_.error(
+        `PostNord calculatePrice failed: ${(error as Error).message}`
+      )
+      return 0
+    }
+  }
+
+  // ── Create fulfillment (book shipment) ──
+
+  async createFulfillment(
+    data: Record<string, unknown>,
+    items: Record<string, unknown>[],
+    order: Record<string, unknown>,
+    fulfillment: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const serviceId = (data.service_id ?? data.id) as string
+    const shippingAddress = (order.shipping_address ??
+      data.shipping_address) as Record<string, unknown> | undefined
+
+    if (!shippingAddress) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "PostNord: shipping address is required to create a fulfillment."
+      )
+    }
+
+    const recipientAddress: PostNordRecipient = {
+      name: [shippingAddress.first_name, shippingAddress.last_name]
+        .filter(Boolean)
+        .join(" ") || (shippingAddress.company as string) || "Recipient",
+      street: [shippingAddress.address_1, shippingAddress.address_2]
+        .filter(Boolean)
+        .join(", "),
+      postalCode: shippingAddress.postal_code as string,
+      city: shippingAddress.city as string,
+      countryCode: shippingAddress.country_code as string,
+      phone: shippingAddress.phone as string | undefined,
+    }
+
+    const totalWeight = Number(data.weight_grams ?? 1000)
+
+    const parcels: PostNordParcelDimensions[] = [
+      {
+        weight_grams: totalWeight,
+        ...(data.length_cm && { length_cm: Number(data.length_cm) }),
+        ...(data.width_cm && { width_cm: Number(data.width_cm) }),
+        ...(data.height_cm && { height_cm: Number(data.height_cm) }),
+      },
+    ]
+
+    const shipment = await this.client.createShipment({
+      serviceId,
+      senderAddress: this.options_.senderAddress,
+      recipientAddress,
+      parcels,
+      reference: (order.display_id ?? order.id) as string | undefined,
+      servicePointId: data.service_point_id as string | undefined,
+    })
+
+    this.logger_.info(
+      `PostNord shipment created: ${shipment.shipmentId} (tracking: ${shipment.trackingNumber})`
+    )
+
+    return {
+      shipment_id: shipment.shipmentId,
+      booking_ref: shipment.bookingRef,
+      tracking_number: shipment.trackingNumber,
+      label_url: shipment.labelUrl,
+      parcels: shipment.parcels,
+    }
+  }
+
+  // ── Create return fulfillment ──
+
+  async createReturnFulfillment(
+    fulfillment: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const data = fulfillment.data as Record<string, unknown> | undefined
+    const shippingAddress = (fulfillment.shipping_address ??
+      data?.shipping_address) as Record<string, unknown> | undefined
+
+    const recipientName = shippingAddress
+      ? [shippingAddress.first_name, shippingAddress.last_name]
+          .filter(Boolean)
+          .join(" ")
+      : "Customer"
+
+    const recipientAddress: PostNordRecipient = shippingAddress
+      ? {
+          name: recipientName || "Customer",
+          street: [shippingAddress.address_1, shippingAddress.address_2]
+            .filter(Boolean)
+            .join(", "),
+          postalCode: shippingAddress.postal_code as string,
+          city: shippingAddress.city as string,
+          countryCode: shippingAddress.country_code as string,
+          phone: shippingAddress.phone as string | undefined,
+        }
+      : {
+          name: "Customer",
+          street: "",
+          postalCode: "",
+          city: "",
+          countryCode: this.options_.senderAddress.countryCode,
+        }
+
+    const weightGrams = Number(data?.weight_grams ?? 1000)
+
+    const returnShipment = await this.client.getReturnLabel({
+      senderAddress: this.options_.senderAddress,
+      recipientAddress,
+      weight_grams: weightGrams,
+      reference: data?.reference as string | undefined,
+    })
+
+    this.logger_.info(
+      `PostNord return label created: ${returnShipment.shipmentId} (tracking: ${returnShipment.trackingNumber})`
+    )
+
+    return {
+      shipment_id: returnShipment.shipmentId,
+      booking_ref: returnShipment.bookingRef,
+      tracking_number: returnShipment.trackingNumber,
+      label_url: returnShipment.labelUrl,
+      is_return: true,
+    }
+  }
+
+  // ── Cancel fulfillment ──
+
+  async cancelFulfillment(
+    fulfillment: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const data = fulfillment.data as Record<string, unknown> | undefined
+    const shipmentId = data?.shipment_id as string | undefined
+
+    if (!shipmentId) {
+      this.logger_.warn("PostNord cancelFulfillment: no shipment_id in data")
+      return {}
+    }
+
+    try {
+      await this.client.cancelShipment(shipmentId)
+      this.logger_.info(`PostNord shipment cancelled: ${shipmentId}`)
+    } catch (error) {
+      this.logger_.error(
+        `PostNord cancelFulfillment failed: ${(error as Error).message}`
+      )
+      throw error
+    }
+
+    return { cancelled: true, shipment_id: shipmentId }
+  }
+
+  // ── Documents (PDF labels) ──
+
+  async getFulfillmentDocuments(
+    data: Record<string, unknown>
+  ): Promise<Record<string, unknown>[]> {
+    const shipmentId = data.shipment_id as string | undefined
+
+    if (!shipmentId) {
+      return []
+    }
+
+    if (data.label_url) {
+      return [
+        {
+          type: "label",
+          format: "pdf",
+          url: data.label_url as string,
+          name: `postnord-label-${shipmentId}.pdf`,
+        },
+      ]
+    }
+
+    try {
+      const label = await this.client.getLabel(shipmentId)
+      return [
+        {
+          type: "label",
+          format: label.format,
+          url: label.url,
+          name: `postnord-label-${shipmentId}.${label.format}`,
+        },
+      ]
+    } catch (error) {
+      this.logger_.error(
+        `PostNord getFulfillmentDocuments failed: ${(error as Error).message}`
+      )
+      return []
+    }
+  }
+
+  async getReturnDocuments(
+    data: Record<string, unknown>
+  ): Promise<Record<string, unknown>[]> {
+    return this.getFulfillmentDocuments(data)
+  }
+}
+
+export default PostNordFulfillmentService
