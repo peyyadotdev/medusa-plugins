@@ -1,0 +1,34 @@
+{
+  "name": "@peyya/medusa-payment-klarna",
+  "version": "0.0.1",
+  "description": "Klarna checkout provider for Medusa v2",
+  "keywords": [
+    "medusa-v2",
+    "medusa-plugin-integration",
+    "medusa-plugin-payment"
+  ],
+  "files": [
+    "dist",
+    ".medusa"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./providers/*": "./.medusa/server/src/providers/*/index.js",
+    "./*": "./.medusa/server/src/*.js"
+  },
+  "scripts": {
+    "build": "medusa plugin:build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@medusajs/framework": "^2.5.0",
+    "@medusajs/medusa": "^2.5.0",
+    "@medusajs/cli": "^2.5.0",
+    "@swc/core": "^1.5.7",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": "^2.5.0",
+    "@medusajs/medusa": "^2.5.0"
+  }
+}
