@@ -1,6 +1,8 @@
 # Medusa JS Plugins
 
-> The missing Swedish infrastructure for Medusa v2. Production-ready plugins covering payments, fulfillment, authentication, commerce intelligence, and agentic commerce — purpose-built for the Swedish and Nordic e-commerce market.
+> Swedish and Nordic infrastructure for Medusa v2 — payments, fulfillment, authentication, commerce intelligence, and agentic commerce.
+
+**Status:** Early development. Packages marked *In Development* have scaffolded providers with mock API integrations — they are not production-ready and do not connect to live APIs yet. Real API integrations are the next step for each package.
 
 ## Packages
 
@@ -8,16 +10,16 @@
 
 | Package | Description | Status |
 |---------|-------------|--------|
-| `@peyya/medusa-payment-swish` | Swish mobile payments (Sweden) | Planned |
-| `@peyya/medusa-payment-klarna` | Klarna checkout (Nordics) | Planned |
-| `@peyya/medusa-payment-qliro` | Qliro One checkout | Planned |
+| `@peyya/medusa-payment-swish` | Swish mobile payments (Sweden) | 🔨 In Development |
+| `@peyya/medusa-payment-klarna` | Klarna Checkout v3 (Nordics) | 🔨 In Development |
+| `@peyya/medusa-payment-qliro` | Qliro One checkout | 🔨 In Development |
 | `@peyya/medusa-payment-trustly` | Trustly bank transfers | Planned |
 
 ### Fulfillment
 
 | Package | Description | Status |
 |---------|-------------|--------|
-| `@peyya/medusa-fulfillment-postnord` | PostNord shipping & pickup points | Planned |
+| `@peyya/medusa-fulfillment-postnord` | PostNord shipping & pickup points | 🔨 In Development |
 | `@peyya/medusa-fulfillment-dhl` | DHL Express, Parcel & ServicePoint | Planned |
 | `@peyya/medusa-fulfillment-budbee` | Budbee home delivery & Box lockers | Planned |
 | `@peyya/medusa-fulfillment-instabox` | Instabox locker delivery | Planned |
@@ -45,16 +47,6 @@
 |---------|-------------|--------|
 | `@peyya/medusa-plugin-agentic-commerce` | AI-native commerce (feeds, chat, markdown, llms.txt) | Planned |
 
-## Quick Start
-
-```bash
-# Install a plugin in your Medusa application
-npm install @peyya/medusa-payment-swish
-
-# Configure in medusa-config.ts
-# See each package's README for configuration details
-```
-
 ## Development
 
 ### Prerequisites
@@ -65,7 +57,7 @@ npm install @peyya/medusa-payment-swish
 ### Setup
 
 ```bash
-git clone https://github.com/peyya-dev/medusa-plugins.git
+git clone https://github.com/peyyadotdev/medusa-plugins.git
 cd medusa-plugins
 pnpm install
 ```
@@ -88,10 +80,6 @@ When you make changes to a package, create a changeset before opening a PR:
 pnpm changeset          # Select changed packages and version bump type
 ```
 
-## Architecture
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architecture overview, naming conventions, and dependency strategy.
-
 ## License
 
-See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
