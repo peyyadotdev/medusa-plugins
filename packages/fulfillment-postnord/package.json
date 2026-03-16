@@ -1,0 +1,33 @@
+{
+  "name": "@peyya/medusa-fulfillment-postnord",
+  "version": "0.0.1",
+  "description": "PostNord shipping provider for Medusa v2 — Nordic postal leader with MyPack Home/Collect, labels, tracking, and pickup points",
+  "keywords": [
+    "medusa-v2",
+    "medusa-plugin-integration",
+    "medusa-plugin-shipping"
+  ],
+  "files": [
+    "dist",
+    ".medusa"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./providers/*": "./.medusa/server/src/providers/*/index.js",
+    "./*": "./.medusa/server/src/*.js"
+  },
+  "scripts": {
+    "build": "medusa plugin:build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@medusajs/framework": "^2.5.0",
+    "@medusajs/medusa": "^2.5.0",
+    "@medusajs/cli": "^2.5.0",
+    "@swc/core": "^1.5.7"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": "^2.5.0",
+    "@medusajs/medusa": "^2.5.0"
+  }
+}
