@@ -32,6 +32,10 @@ import type { QliroOptions, QliroCheckoutStatusPushPayload } from "./types"
 
 type InjectedDependencies = {
   logger: Logger
+  pluginSettings?: {
+    getDecryptedSettings: (id: string) => Promise<Record<string, unknown> | null>
+    markVerified: (id: string) => Promise<void>
+  }
 }
 
 class QliroProviderService extends AbstractPaymentProvider<QliroOptions> {
@@ -40,6 +44,9 @@ class QliroProviderService extends AbstractPaymentProvider<QliroOptions> {
   protected logger_: Logger
   protected options_: QliroOptions
   protected client: QliroClient
+  private settingsService_: InjectedDependencies["pluginSettings"]
+  private cachedConfig_: QliroOptions | null = null
+  private configCacheExpiry_ = 0
 
   static validateOptions(options: Record<any, any>) {
     if (!options.apiKey) {
@@ -60,11 +67,57 @@ class QliroProviderService extends AbstractPaymentProvider<QliroOptions> {
     super(container, options)
     this.logger_ = container.logger
     this.options_ = options
+    try {
+      this.settingsService_ = container.pluginSettings
+    } catch {
+      this.settingsService_ = undefined
+    }
     this.client = new QliroClient({
       apiKey: options.apiKey,
       merchantId: options.merchantId,
       environment: options.environment ?? "sandbox",
     })
+  }
+
+  private async getEffectiveConfig(): Promise<QliroOptions> {
+    if (!this.settingsService_) return this.options_
+
+    const now = Date.now()
+    if (this.cachedConfig_ && now < this.configCacheExpiry_) {
+      return this.cachedConfig_
+    }
+
+    try {
+      const dbSettings = await this.settingsService_.getDecryptedSettings("qliro")
+      if (dbSettings?.apiKey && dbSettings?.merchantId) {
+        this.cachedConfig_ = {
+          ...this.options_,
+          ...(dbSettings as unknown as Partial<QliroOptions>),
+        }
+        this.configCacheExpiry_ = now + 60_000
+        return this.cachedConfig_
+      }
+    } catch (err) {
+      this.logger_.warn(`Failed to load Qliro settings from DB: ${err}`)
+    }
+
+    return this.options_
+  }
+
+  private async getClient(): Promise<QliroClient> {
+    const config = await this.getEffectiveConfig()
+    if (
+      config.apiKey !== this.options_.apiKey ||
+      config.merchantId !== this.options_.merchantId ||
+      config.environment !== this.options_.environment
+    ) {
+      return new QliroClient({
+        apiKey: config.apiKey,
+        merchantId: config.merchantId,
+        environment: config.environment ?? "sandbox",
+      })
+    }
+    return this.client
   }
 
   // ── Phase 4.2: initiatePayment ──

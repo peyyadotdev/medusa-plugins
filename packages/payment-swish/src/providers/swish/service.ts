@@ -37,6 +37,10 @@ import type {
 
 type InjectedDependencies = {
   logger: Logger
+  pluginSettings?: {
+    getDecryptedSettings: (id: string) => Promise<Record<string, unknown> | null>
+    markVerified: (id: string) => Promise<void>
+  }
 }
 
 class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
@@ -44,13 +48,16 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
 
   protected logger_: Logger
   protected options_: SwishOptions
-  protected client_: SwishClient
+  protected client_: SwishClient | null = null
+  private settingsService_: InjectedDependencies["pluginSettings"]
+  private cachedConfig_: SwishOptions | null = null
+  private configCacheExpiry_ = 0
 
   static validateOptions(options: Record<any, any>) {
-    if (!options.certificatePath) {
+    if (!options.certificatePath && !options.certificateBase64) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
-        "Swish requires `certificatePath` in provider options."
+        "Swish requires `certificatePath` or `certificateBase64` in provider options."
       )
     }
     if (!options.callbackUrl) {
@@ -71,11 +78,62 @@ class SwishProviderService extends AbstractPaymentProvider<SwishOptions> {
     super(container, options)
     this.logger_ = container.logger
     this.options_ = options
-    this.client_ = new SwishClient({
-      certificatePath: options.certificatePath,
-      certificatePassword: options.certificatePassword,
-      environment: options.environment,
-    })
+    try {
+      this.settingsService_ = container.pluginSettings
+    } catch {
+      this.settingsService_ = undefined
+    }
+
+    if (options.certificatePath || options.certificateBase64) {
+      this.client_ = new SwishClient({
+        certificatePath: options.certificatePath,
+        certificateBase64: options.certificateBase64,
+        certificatePassword: options.certificatePassword,
+        environment: options.environment,
+      })
+    }
+  }
+
+  private async getEffectiveConfig(): Promise<SwishOptions> {
+    if (!this.settingsService_) return this.options_
+
+    const now = Date.now()
+    if (this.cachedConfig_ && now < this.configCacheExpiry_) {
+      return this.cachedConfig_
+    }
+
+    try {
+      const dbSettings = await this.settingsService_.getDecryptedSettings("swish")
+      if (dbSettings?.payeeAlias && dbSettings?.callbackUrl &&
+          (dbSettings?.certificateBase64 || dbSettings?.certificatePath)) {
+        this.cachedConfig_ = {
+          ...this.options_,
+          ...(dbSettings as unknown as Partial<SwishOptions>),
+        }
+        this.configCacheExpiry_ = now + 60_000
+        return this.cachedConfig_
+      }
+    } catch (err) {
+      this.logger_.warn(`Failed to load Swish settings from DB: ${err}`)
+    }
+
+    return this.options_
+  }
+
+  private async getClient(): Promise<SwishClient> {
+    const config = await this.getEffectiveConfig()
+    const hasDbCert = config.certificateBase64 &&
+      config.certificateBase64 !== this.options_.certificateBase64
+
+    if (hasDbCert || !this.client_) {
+      return new SwishClient({
+        certificatePath: config.certificatePath,
+        certificateBase64: config.certificateBase64,
+        certificatePassword: config.certificatePassword,
+        environment: config.environment,
+      })
+    }
+    return this.client_
   }
 
   async initiatePayment(

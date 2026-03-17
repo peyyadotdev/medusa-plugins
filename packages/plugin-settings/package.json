@@ -1,0 +1,41 @@
+{
+  "name": "@peyya/medusa-plugin-settings",
+  "version": "0.0.1",
+  "description": "Shared encrypted settings storage and admin UI components for Medusa v2 plugins",
+  "keywords": [
+    "medusa-v2",
+    "medusa-plugin-integration",
+    "medusa-plugin-other"
+  ],
+  "files": [
+    "dist",
+    ".medusa"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./modules/*": "./.medusa/server/src/modules/*/index.js",
+    "./workflows/*": "./.medusa/server/src/workflows/*.js",
+    "./*": "./.medusa/server/src/*.js"
+  },
+  "scripts": {
+    "build": "medusa plugin:build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@medusajs/framework": "^2.5.0",
+    "@medusajs/medusa": "^2.5.0",
+    "@medusajs/cli": "^2.5.0",
+    "@medusajs/admin-sdk": "^2.5.0",
+    "@medusajs/ui": "^4.0.0",
+    "@medusajs/icons": "^2.0.0",
+    "@swc/core": "^1.5.7",
+    "@tanstack/react-query": "^5.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "vitest": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": "^2.5.0",
+    "@medusajs/medusa": "^2.5.0"
+  }
+}

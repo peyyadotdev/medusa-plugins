@@ -1,7 +1,8 @@
 export type SwishEnvironment = "test" | "production"
 
 export type SwishOptions = {
-  certificatePath: string
+  certificatePath?: string
+  certificateBase64?: string
   certificatePassword?: string
   callbackUrl: string
   payeeAlias: string

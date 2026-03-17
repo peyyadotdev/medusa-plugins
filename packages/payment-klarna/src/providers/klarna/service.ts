@@ -43,6 +43,10 @@ import type {
 
 type InjectedDependencies = {
   logger: Logger
+  pluginSettings?: {
+    getDecryptedSettings: (id: string) => Promise<Record<string, unknown> | null>
+    markVerified: (id: string) => Promise<void>
+  }
 }
 
 const VALID_REGIONS: KlarnaRegion[] = ["eu", "na", "oc"]
@@ -53,8 +57,9 @@ class KlarnaProviderService extends AbstractPaymentProvider<KlarnaOptions> {
   protected logger_: Logger
   protected options_: KlarnaOptions
   protected client: KlarnaClient
-
-  // ── Phase 4.1: validateOptions ──
+  private settingsService_: InjectedDependencies["pluginSettings"]
+  private cachedConfig_: KlarnaOptions | null = null
+  private configCacheExpiry_ = 0
 
   static validateOptions(options: Record<string, unknown>) {
     if (!options.username) {
@@ -81,12 +86,60 @@ class KlarnaProviderService extends AbstractPaymentProvider<KlarnaOptions> {
     super(container, options)
     this.logger_ = container.logger
     this.options_ = options
+    try {
+      this.settingsService_ = container.pluginSettings
+    } catch {
+      this.settingsService_ = undefined
+    }
     this.client = new KlarnaClient({
       username: options.username,
       password: options.password,
       region: options.region,
       environment: options.environment ?? "playground",
     })
+  }
+
+  private async getEffectiveConfig(): Promise<KlarnaOptions> {
+    if (!this.settingsService_) return this.options_
+
+    const now = Date.now()
+    if (this.cachedConfig_ && now < this.configCacheExpiry_) {
+      return this.cachedConfig_
+    }
+
+    try {
+      const dbSettings = await this.settingsService_.getDecryptedSettings("klarna")
+      if (dbSettings?.username && dbSettings?.password && dbSettings?.region) {
+        this.cachedConfig_ = {
+          ...this.options_,
+          ...(dbSettings as unknown as Partial<KlarnaOptions>),
+        }
+        this.configCacheExpiry_ = now + 60_000
+        return this.cachedConfig_
+      }
+    } catch (err) {
+      this.logger_.warn(`Failed to load Klarna settings from DB: ${err}`)
+    }
+
+    return this.options_
+  }
+
+  private async getClient(): Promise<KlarnaClient> {
+    const config = await this.getEffectiveConfig()
+    if (
+      config.username !== this.options_.username ||
+      config.password !== this.options_.password ||
+      config.region !== this.options_.region ||
+      config.environment !== this.options_.environment
+    ) {
+      return new KlarnaClient({
+        username: config.username,
+        password: config.password,
+        region: config.region,
+        environment: config.environment ?? "playground",
+      })
+    }
+    return this.client
   }
 
   // ── Phase 4.2: initiatePayment ──

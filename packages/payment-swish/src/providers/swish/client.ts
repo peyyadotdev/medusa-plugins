@@ -19,16 +19,31 @@ export class SwishClient {
   private agent: https.Agent
 
   constructor(options: {
-    certificatePath: string
+    certificatePath?: string
+    certificateBase64?: string
     certificatePassword?: string
     environment: SwishEnvironment
   }) {
     this.baseUrl = BASE_URLS[options.environment]
 
-    const certBuffer = fs.readFileSync(options.certificatePath)
-    const ext = options.certificatePath.toLowerCase()
+    let certBuffer: Buffer
+    let isPfx: boolean
 
-    if (ext.endsWith(".p12") || ext.endsWith(".pfx")) {
+    if (options.certificateBase64) {
+      certBuffer = Buffer.from(options.certificateBase64, "base64")
+      isPfx = true
+    } else if (options.certificatePath) {
+      certBuffer = fs.readFileSync(options.certificatePath)
+      isPfx =
+        options.certificatePath.toLowerCase().endsWith(".p12") ||
+        options.certificatePath.toLowerCase().endsWith(".pfx")
+    } else {
+      throw new Error(
+        "SwishClient requires either certificatePath or certificateBase64"
+      )
+    }
+
+    if (isPfx) {
       this.agent = new https.Agent({
         pfx: certBuffer,
         passphrase: options.certificatePassword,

@@ -19,6 +19,10 @@ import type {
 
 type InjectedDependencies = {
   logger: Logger
+  pluginSettings?: {
+    getDecryptedSettings: (id: string) => Promise<Record<string, unknown> | null>
+    markVerified: (id: string) => Promise<void>
+  }
 }
 
 const TRACKING_URL_BASE = "https://tracking.postnord.com/tracking?id="
@@ -69,6 +73,9 @@ class PostNordFulfillmentService extends AbstractFulfillmentProviderService {
   protected logger_: Logger
   protected options_: PostNordOptions
   protected client: PostNordClient
+  private settingsService_: InjectedDependencies["pluginSettings"]
+  private cachedConfig_: PostNordOptions | null = null
+  private configCacheExpiry_ = 0
 
   static validateOptions(options: Record<any, any>) {
     if (!options.apiKey) {
@@ -102,11 +109,57 @@ class PostNordFulfillmentService extends AbstractFulfillmentProviderService {
     super()
     this.logger_ = container.logger
     this.options_ = options
+    try {
+      this.settingsService_ = container.pluginSettings
+    } catch {
+      this.settingsService_ = undefined
+    }
     this.client = new PostNordClient({
       apiKey: options.apiKey,
       customerNumber: options.customerNumber,
       environment: options.environment ?? "test",
     })
+  }
+
+  private async getEffectiveConfig(): Promise<PostNordOptions> {
+    if (!this.settingsService_) return this.options_
+
+    const now = Date.now()
+    if (this.cachedConfig_ && now < this.configCacheExpiry_) {
+      return this.cachedConfig_
+    }
+
+    try {
+      const dbSettings = await this.settingsService_.getDecryptedSettings("postnord")
+      if (dbSettings?.apiKey && dbSettings?.customerNumber) {
+        this.cachedConfig_ = {
+          ...this.options_,
+          ...(dbSettings as unknown as Partial<PostNordOptions>),
+        }
+        this.configCacheExpiry_ = now + 60_000
+        return this.cachedConfig_
+      }
+    } catch (err) {
+      this.logger_.warn(`Failed to load PostNord settings from DB: ${err}`)
+    }
+
+    return this.options_
+  }
+
+  private async getClient(): Promise<PostNordClient> {
+    const config = await this.getEffectiveConfig()
+    if (
+      config.apiKey !== this.options_.apiKey ||
+      config.customerNumber !== this.options_.customerNumber ||
+      config.environment !== this.options_.environment
+    ) {
+      return new PostNordClient({
+        apiKey: config.apiKey,
+        customerNumber: config.customerNumber,
+        environment: config.environment ?? "test",
+      })
+    }
+    return this.client
   }
 
   // ── Available shipping options ──
